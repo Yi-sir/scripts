@@ -13,7 +13,7 @@ N_GROUPS = 8
 N_GPUS_PER_GROUP = 8
 NUM_ROUTED_EXPERTS = 256
 
-log_ctrl = False
+log_ctrl = True
 print = print if log_ctrl else (lambda *args, **kwargs: None)
 
 def draw_heat_map(weight):
@@ -40,7 +40,9 @@ def parse_experts_heat(path):
         weight = data["logical_count"].cpu()
     elif path.endswith(".json"):
         data_dict = json.loads(Path(path).read_text())
-        weight = torch.tensor(data_dict["logical_count"]).unsqueeze(0)
+        weight = torch.tensor(data_dict["logical_count"])
+    if len(weight.shape) == 2:
+        weight = weight.unsqueeze(0)
     # draw_heat_map(weight)
     return weight
 
@@ -67,18 +69,32 @@ def draw_ratio(ratio_origin, ratio_eplb, ratio_weight, n_nodes, n_red_experts):
     x = np.arange(0, num_layers, 1)
     if ratio_origin is not None:
         plt.plot(x, ratio_origin, label='origin', color='blue', linewidth=2, marker='o', markersize=4)
+        avg = ratio_origin[NUM_DENSE_LAYERS:].mean()
+        avg_origin_ratio = np.ones(num_layers) * avg
+        plt.plot(x, avg_origin_ratio, label='origin avg', color='blue', linestyle='--', linewidth=1, marker='o', markersize=1)
+        plt.text(-0.5, avg, f'{avg:.3f}',
+             color='blue', va='center', ha='right', fontsize=9,
+             bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+
     if ratio_eplb is not None:
-        plt.plot(x, ratio_eplb, label='eplb', color='red', linewidth=2, linestyle='--', marker='s', markersize=4)
+        plt.plot(x, ratio_eplb, label='eplb', color='red', linewidth=2, marker='s', markersize=4)
+        avg = ratio_eplb[NUM_DENSE_LAYERS:].mean()
+        avg_eplb_ratio = np.ones(num_layers) * avg
+        plt.plot(x, avg_eplb_ratio, label='eplb avg', color='red', linewidth=1, linestyle='--', marker='s', markersize=1)
+        plt.text(-0.5, avg, f'{avg:.3f}',
+             color='red', va='center', ha='right', fontsize=9,
+             bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+
     if ratio_weight is not None:
         plt.plot(x, ratio_weight, label='gpu weight', color='green', linewidth=2, linestyle=':', marker='s', markersize=4)
 
-    plt.title('expert balancedness/gpu weight', fontsize=14, fontweight='bold')
+    plt.title('expert balancedness', fontsize=14, fontweight='bold')
     plt.xlabel('layer_id', fontsize=12)
     plt.ylabel('balancedness', fontsize=12)
 
     plt.legend(fontsize=12)
 
-    plt.savefig(f"./imgs/sglang_dataset/expert_balancedness_EP{n_nodes * N_GPUS_PER_GROUP}_256_{n_red_experts}.png")
+    plt.savefig(f"./imgs/1000_decode/expert_balancedness_EP{n_nodes * N_GPUS_PER_GROUP}_256_{n_red_experts}.png")
 
 def rebalance(logical_count, n_nodes, n_redundant_experts):
     alg = compute_algorithm("auto", N_GROUPS, n_nodes)
@@ -108,9 +124,12 @@ def parse_experts_dist(logical_count):
     # file_path = Path("EP0.npy") # EP几都一样
     # experts_dist = np.load(file_path) # physical to logical
 
-    all_combinations = [(1, 0), (1, 8), (1, 16), (1, 32),
-                        (2, 0), (2, 16), (2, 32),
-                        (4, 0), (4, 32)]
+    all_combinations = [
+        (1, 0),
+        (1, 8), (1, 16), (1, 32),
+        (2, 0), (2, 16), (2, 32),
+        (4, 0), (4, 32)
+    ]
 
     for (n_node, n_red_expert) in all_combinations:
 
@@ -167,5 +186,6 @@ if __name__ == "__main__":
     # /sgl-workspace/sglang/experts/weight/attachment_ep_statistics/prefill_in1024.json
     # /sgl-workspace/sglang/experts/weight/sharegpt_pd_mix.pt
     # /sgl-workspace/sglang/experts/weight/110_decode.pt
-    logical_count = parse_experts_heat("/sgl-workspace/sglang/experts/weight/attachment_ep_statistics/prefill_in1024.json")
+    logical_count = parse_experts_heat("/sgl-workspace/sglang/experts/weight/1000_prefill.pt")
     parse_experts_dist(logical_count)
+    # print(logical_count.shape)
